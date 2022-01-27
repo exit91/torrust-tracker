@@ -35,7 +35,7 @@ impl AuthKey {
         let current_time = current_time();
 
         match self.valid_until {
-            Some(valid_until) if valid_until < current_time => Ok(()),
+            Some(valid_until) if valid_until > current_time => Ok(()),
             Some(_) => Err(Error::KeyExpired),
             None => Err(Error::KeyInvalid),
         }
