@@ -4,6 +4,7 @@ use log::debug;
 use r2d2::Pool;
 use r2d2_sqlite::rusqlite::NO_PARAMS;
 use r2d2_sqlite::{rusqlite, SqliteConnectionManager};
+use std::convert::TryInto;
 use std::str::FromStr;
 
 pub struct SqliteDatabase {
@@ -15,13 +16,9 @@ impl SqliteDatabase {
         let sqlite_connection_manager = SqliteConnectionManager::file(db_path);
         let sqlite_pool = r2d2::Pool::new(sqlite_connection_manager)
             .expect("Failed to create r2d2 SQLite connection pool.");
-        let sqlite_database = SqliteDatabase { pool: sqlite_pool };
+        SqliteDatabase::create_database_tables(&sqlite_pool)?;
 
-        if let Err(error) = SqliteDatabase::create_database_tables(&sqlite_database.pool) {
-            return Err(error);
-        };
-
-        Ok(sqlite_database)
+        Ok(SqliteDatabase { pool: sqlite_pool })
     }
 
     pub fn create_database_tables(
@@ -31,8 +28,7 @@ impl SqliteDatabase {
         CREATE TABLE IF NOT EXISTS whitelist (
             id integer PRIMARY KEY AUTOINCREMENT,
             info_hash VARCHAR(20) NOT NULL UNIQUE
-        );"
-        .to_string();
+        );";
 
         let create_keys_table = format!(
             "
@@ -41,23 +37,16 @@ impl SqliteDatabase {
             key VARCHAR({}) NOT NULL UNIQUE,
             valid_until INT(10) NOT NULL
          );",
-            AUTH_KEY_LENGTH as i8
+            AUTH_KEY_LENGTH
         );
 
         let conn = pool.get().unwrap();
-        match conn.execute(&create_whitelist_table, NO_PARAMS) {
-            Ok(updated) => match conn.execute(&create_keys_table, NO_PARAMS) {
-                Ok(updated2) => Ok(updated + updated2),
-                Err(e) => {
-                    debug!("{:?}", e);
-                    Err(e)
-                }
-            },
-            Err(e) => {
-                debug!("{:?}", e);
-                Err(e)
-            }
-        }
+        conn.execute(create_whitelist_table, NO_PARAMS)
+            .and_then(|updated| {
+                conn.execute(&create_keys_table, NO_PARAMS)
+                    .map(|updated2| updated + updated2)
+            })
+            .map_err(trace_debug)
     }
 
     pub async fn get_info_hash_from_whitelist(
@@ -83,21 +72,12 @@ impl SqliteDatabase {
         info_hash: InfoHash,
     ) -> Result<usize, rusqlite::Error> {
         let conn = self.pool.get().unwrap();
-        match conn.execute(
+        conn.execute(
             "INSERT INTO whitelist (info_hash) VALUES (?)",
             &[info_hash.to_string()],
-        ) {
-            Ok(updated) => {
-                if updated > 0 {
-                    return Ok(updated);
-                }
-                Err(rusqlite::Error::ExecuteReturnedResults)
-            }
-            Err(e) => {
-                debug!("{:?}", e);
-                Err(e)
-            }
-        }
+        )
+        .map_err(trace_debug)
+        .and_then(validate_updated)
     }
 
     pub async fn remove_info_hash_from_whitelist(
@@ -105,21 +85,12 @@ impl SqliteDatabase {
         info_hash: InfoHash,
     ) -> Result<usize, rusqlite::Error> {
         let conn = self.pool.get().unwrap();
-        match conn.execute(
+        conn.execute(
             "DELETE FROM whitelist WHERE info_hash = ?",
             &[info_hash.to_string()],
-        ) {
-            Ok(updated) => {
-                if updated > 0 {
-                    return Ok(updated);
-                }
-                Err(rusqlite::Error::ExecuteReturnedResults)
-            }
-            Err(e) => {
-                debug!("{:?}", e);
-                Err(e)
-            }
-        }
+        )
+        .map_err(trace_debug)
+        .and_then(validate_updated)
     }
 
     pub async fn get_key_from_keys(&self, key: &str) -> Result<AuthKey, rusqlite::Error> {
@@ -133,7 +104,7 @@ impl SqliteDatabase {
 
             Ok(AuthKey {
                 key,
-                valid_until: Some(valid_until_i64 as u64),
+                valid_until: Some(valid_until_i64.try_into().unwrap()),
             })
         } else {
             Err(rusqlite::Error::QueryReturnedNoRows)
@@ -142,39 +113,35 @@ impl SqliteDatabase {
 
     pub async fn add_key_to_keys(&self, auth_key: &AuthKey) -> Result<usize, rusqlite::Error> {
         let conn = self.pool.get().unwrap();
-        match conn.execute(
+
+        conn.execute(
             "INSERT INTO keys (key, valid_until) VALUES (?1, ?2)",
             &[
                 auth_key.key.to_string(),
                 auth_key.valid_until.unwrap().to_string(),
             ],
-        ) {
-            Ok(updated) => {
-                if updated > 0 {
-                    return Ok(updated);
-                }
-                Err(rusqlite::Error::ExecuteReturnedResults)
-            }
-            Err(e) => {
-                debug!("{:?}", e);
-                Err(e)
-            }
-        }
+        )
+        .map_err(trace_debug)
+        .and_then(validate_updated)
     }
 
     pub async fn remove_key_from_keys(&self, key: String) -> Result<usize, rusqlite::Error> {
         let conn = self.pool.get().unwrap();
-        match conn.execute("DELETE FROM keys WHERE key = ?", &[key]) {
-            Ok(updated) => {
-                if updated > 0 {
-                    return Ok(updated);
-                }
-                Err(rusqlite::Error::ExecuteReturnedResults)
-            }
-            Err(e) => {
-                debug!("{:?}", e);
-                Err(e)
-            }
-        }
+        conn.execute("DELETE FROM keys WHERE key = ?", &[key])
+            .map_err(trace_debug)
+            .and_then(validate_updated)
+    }
+}
+
+fn trace_debug<T: std::fmt::Debug>(value: T) -> T {
+    debug!("{:?}", value);
+    value
+}
+
+fn validate_updated(updated: usize) -> Result<usize, rusqlite::Error> {
+    if updated > 0 {
+        Ok(updated)
+    } else {
+        Err(rusqlite::Error::ExecuteReturnedResults)
     }
 }
