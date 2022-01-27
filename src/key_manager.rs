@@ -26,14 +26,12 @@ pub fn generate_auth_key(seconds_valid: u64) -> AuthKey {
 
 pub fn verify_auth_key(auth_key: &AuthKey) -> Result<(), Error> {
     let current_time = current_time();
-    if auth_key.valid_until.is_none() {
-        return Err(Error::KeyInvalid);
-    }
-    if auth_key.valid_until.unwrap() < current_time {
-        return Err(Error::KeyExpired);
-    }
 
-    Ok(())
+    match auth_key.valid_until {
+        Some(valid_until) if valid_until < current_time => Ok(()),
+        Some(_) => Err(Error::KeyExpired),
+        None => Err(Error::KeyInvalid),
+    }
 }
 
 #[derive(Serialize, Debug, Eq, PartialEq, Clone)]
