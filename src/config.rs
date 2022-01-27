@@ -75,7 +75,7 @@ pub struct Configuration {
     pub mode: TrackerMode,
     pub db_path: String,
     pub cleanup_interval: Option<u64>,
-    pub external_ip: Option<String>,
+    pub external_ip: Option<IpAddr>,
     pub udp_tracker: UdpTrackerConfig,
     pub http_tracker: Option<HttpTrackerConfig>,
     pub http_api: Option<HttpApiConfig>,
@@ -126,13 +126,7 @@ impl Configuration {
     }
 
     pub fn get_ext_ip(&self) -> Option<IpAddr> {
-        match &self.external_ip {
-            None => None,
-            Some(external_ip) => match IpAddr::from_str(external_ip) {
-                Ok(external_ip) => Some(external_ip),
-                Err(_) => None,
-            },
-        }
+        self.external_ip.clone()
     }
 }
 
@@ -143,7 +137,7 @@ impl Configuration {
             mode: TrackerMode::PublicMode,
             db_path: String::from("data.db"),
             cleanup_interval: Some(600),
-            external_ip: Some(String::from("0.0.0.0")),
+            external_ip: IpAddr::from_str("0.0.0.0").ok(),
             udp_tracker: UdpTrackerConfig {
                 bind_address: String::from("0.0.0.0:6969"),
                 announce_interval: 120,
