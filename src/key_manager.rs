@@ -42,25 +42,19 @@ impl AuthKey {
     }
 
     pub fn from_buffer(key_buffer: [u8; AUTH_KEY_LENGTH]) -> Option<Self> {
-        if let Ok(key) = String::from_utf8(Vec::from(key_buffer)) {
-            Some(Self {
+        String::from_utf8(Vec::from(key_buffer))
+            .ok()
+            .map(|key| Self {
                 key,
                 valid_until: None,
             })
-        } else {
-            None
-        }
     }
 
     pub fn from_string(key: &str) -> Option<Self> {
-        if key.len() != AUTH_KEY_LENGTH {
-            None
-        } else {
-            Some(Self {
-                key: key.to_string(),
-                valid_until: None,
-            })
-        }
+        (key.len() == AUTH_KEY_LENGTH).then(|| Self {
+            key: key.to_string(),
+            valid_until: None,
+        })
     }
 }
 
@@ -77,7 +71,7 @@ pub enum Error {
 
 impl From<r2d2_sqlite::rusqlite::Error> for Error {
     fn from(e: r2d2_sqlite::rusqlite::Error) -> Self {
-        eprintln!("{}", e);
+        debug!("{}", e);
         Error::KeyVerificationError
     }
 }
