@@ -40,9 +40,38 @@ pub struct HttpApiConfig {
     pub access_tokens: HashMap<String, String>,
 }
 
+#[derive(Deserialize, Serialize, Copy, Clone, Debug)]
+pub enum LogLevel {
+    #[serde(rename = "off")]
+    Off,
+    #[serde(rename = "trace")]
+    Trace,
+    #[serde(rename = "debug")]
+    Debug,
+    #[serde(rename = "info")]
+    Info,
+    #[serde(rename = "warn")]
+    Warn,
+    #[serde(rename = "error")]
+    Error,
+}
+
+impl Into<log::LevelFilter> for LogLevel {
+    fn into(self) -> log::LevelFilter {
+        match self {
+            LogLevel::Off => log::LevelFilter::Off,
+            LogLevel::Trace => log::LevelFilter::Trace,
+            LogLevel::Debug => log::LevelFilter::Debug,
+            LogLevel::Info => log::LevelFilter::Info,
+            LogLevel::Warn => log::LevelFilter::Warn,
+            LogLevel::Error => log::LevelFilter::Error,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Configuration {
-    pub log_level: Option<String>,
+    pub log_level: Option<LogLevel>,
     pub mode: TrackerMode,
     pub db_path: String,
     pub cleanup_interval: Option<u64>,
@@ -110,7 +139,7 @@ impl Configuration {
 impl Configuration {
     pub fn default() -> Configuration {
         Configuration {
-            log_level: Option::from(String::from("info")),
+            log_level: Some(LogLevel::Info),
             mode: TrackerMode::PublicMode,
             db_path: String::from("data.db"),
             cleanup_interval: Some(600),
