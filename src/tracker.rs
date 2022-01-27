@@ -1,17 +1,17 @@
+use super::common::*;
+use crate::common::{InfoHash, NumberOfBytes};
+use crate::database::SqliteDatabase;
+use crate::key_manager::AuthKey;
+use crate::{http_server, key_manager, udp_server, Configuration};
+use log::debug;
+use r2d2_sqlite::rusqlite;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
-use tokio::sync::RwLock;
-use crate::common::{NumberOfBytes, InfoHash};
-use super::common::*;
-use std::net::{SocketAddr, IpAddr};
-use crate::{Configuration, http_server, key_manager, udp_server};
 use std::collections::btree_map::Entry;
-use crate::database::SqliteDatabase;
+use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use log::debug;
-use crate::key_manager::{AuthKey};
-use r2d2_sqlite::rusqlite;
+use tokio::sync::RwLock;
 
 const TWO_HOURS: std::time::Duration = std::time::Duration::from_secs(3600 * 2);
 const FIVE_MINUTES: std::time::Duration = std::time::Duration::from_secs(300);
@@ -50,7 +50,11 @@ pub struct TorrentPeer {
 }
 
 impl TorrentPeer {
-    pub fn from_udp_announce_request(announce_request: &udp_server::AnnounceRequest, remote_addr: SocketAddr, peer_addr: Option<IpAddr>) -> Self {
+    pub fn from_udp_announce_request(
+        announce_request: &udp_server::AnnounceRequest,
+        remote_addr: SocketAddr,
+        peer_addr: Option<IpAddr>,
+    ) -> Self {
         // Potentially substitute localhost IP with external IP
         let peer_addr = match peer_addr {
             None => SocketAddr::new(IpAddr::from(remote_addr.ip()), announce_request.port.0),
@@ -70,11 +74,15 @@ impl TorrentPeer {
             uploaded: announce_request.bytes_uploaded,
             downloaded: announce_request.bytes_downloaded,
             left: announce_request.bytes_left,
-            event: announce_request.event
+            event: announce_request.event,
         }
     }
 
-    pub fn from_http_announce_request(announce_request: &http_server::AnnounceRequest, remote_addr: SocketAddr, peer_addr: Option<IpAddr>) -> Self {
+    pub fn from_http_announce_request(
+        announce_request: &http_server::AnnounceRequest,
+        remote_addr: SocketAddr,
+        peer_addr: Option<IpAddr>,
+    ) -> Self {
         // Potentially substitute localhost IP with external IP
         let peer_addr = match peer_addr {
             None => SocketAddr::new(IpAddr::from(remote_addr.ip()), announce_request.port),
@@ -92,7 +100,7 @@ impl TorrentPeer {
                 "started" => AnnounceEvent::Started,
                 "stopped" => AnnounceEvent::Stopped,
                 "completed" => AnnounceEvent::Completed,
-                _ => AnnounceEvent::None
+                _ => AnnounceEvent::None,
             }
         } else {
             AnnounceEvent::None
@@ -105,11 +113,13 @@ impl TorrentPeer {
             uploaded: announce_request.uploaded,
             downloaded: announce_request.downloaded,
             left: announce_request.left,
-            event
+            event,
         }
     }
 
-    fn is_seeder(&self) -> bool { self.left.0 <= 0 && self.event != AnnounceEvent::Stopped }
+    fn is_seeder(&self) -> bool {
+        self.left.0 <= 0 && self.event != AnnounceEvent::Stopped
+    }
 
     fn is_completed(&self) -> bool {
         self.event == AnnounceEvent::Completed
@@ -159,7 +169,6 @@ impl TorrentEntry {
             .filter(|e| e.1.peer_addr.is_ipv4())
             .take(MAX_SCRAPE_TORRENTS as usize)
         {
-
             // skip ip address of client
             if peer.peer_addr == *remote_addr {
                 //continue;
@@ -174,7 +183,11 @@ impl TorrentEntry {
         self.peers.iter()
     }
 
-    pub fn update_torrent_stats_with_peer(&mut self, peer: &TorrentPeer, peer_old: Option<TorrentPeer>) {
+    pub fn update_torrent_stats_with_peer(
+        &mut self,
+        peer: &TorrentPeer,
+        peer_old: Option<TorrentPeer>,
+    ) {
         match peer_old {
             None => {
                 if peer.is_seeder() {
@@ -253,9 +266,8 @@ pub struct TorrentTracker {
 
 impl TorrentTracker {
     pub fn new(config: Arc<Configuration>) -> TorrentTracker {
-        let database = SqliteDatabase::new(&config.db_path).unwrap_or_else(|error| {
-            panic!("Could not create SQLite database. Reason: {}", error)
-        });
+        let database = SqliteDatabase::new(&config.db_path)
+            .unwrap_or_else(|error| panic!("Could not create SQLite database. Reason: {}", error));
 
         TorrentTracker {
             config,
@@ -268,7 +280,9 @@ impl TorrentTracker {
         let auth_key = key_manager::generate_auth_key(seconds_valid);
 
         // add key to database
-        if let Err(error) = self.database.add_key_to_keys(&auth_key).await { return Err(error) }
+        if let Err(error) = self.database.add_key_to_keys(&auth_key).await {
+            return Err(error);
+        }
 
         Ok(auth_key)
     }
@@ -282,95 +296,100 @@ impl TorrentTracker {
         key_manager::verify_auth_key(&db_key)
     }
 
-    pub async fn authenticate_request(&self, info_hash: &InfoHash, key: &Option<AuthKey>) -> Result<(), TorrentError> {
+    pub async fn authenticate_request(
+        &self,
+        info_hash: &InfoHash,
+        key: &Option<AuthKey>,
+    ) -> Result<(), TorrentError> {
         match self.config.mode {
             TrackerMode::PublicMode => Ok(()),
             TrackerMode::ListedMode => {
                 if !self.is_info_hash_whitelisted(info_hash).await {
-                    return Err(TorrentError::TorrentNotWhitelisted)
+                    return Err(TorrentError::TorrentNotWhitelisted);
                 }
 
                 Ok(())
             }
-            TrackerMode::PrivateMode => {
-                match key {
-                    Some(key) => {
-                        if self.verify_auth_key(key).await.is_err() {
-                            return Err(TorrentError::PeerKeyNotValid)
-                        }
+            TrackerMode::PrivateMode => match key {
+                Some(key) => {
+                    if self.verify_auth_key(key).await.is_err() {
+                        return Err(TorrentError::PeerKeyNotValid);
+                    }
 
-                        Ok(())
-                    }
-                    None => {
-                        return Err(TorrentError::PeerNotAuthenticated)
-                    }
+                    Ok(())
                 }
-            }
-            TrackerMode::PrivateListedMode => {
-                match key {
-                    Some(key) => {
-                        if self.verify_auth_key(key).await.is_err() {
-                            return Err(TorrentError::PeerKeyNotValid)
-                        }
-
-                        if !self.is_info_hash_whitelisted(info_hash).await {
-                            return Err(TorrentError::TorrentNotWhitelisted)
-                        }
-
-                        Ok(())
+                None => return Err(TorrentError::PeerNotAuthenticated),
+            },
+            TrackerMode::PrivateListedMode => match key {
+                Some(key) => {
+                    if self.verify_auth_key(key).await.is_err() {
+                        return Err(TorrentError::PeerKeyNotValid);
                     }
-                    None => {
-                        return Err(TorrentError::PeerNotAuthenticated)
+
+                    if !self.is_info_hash_whitelisted(info_hash).await {
+                        return Err(TorrentError::TorrentNotWhitelisted);
                     }
+
+                    Ok(())
                 }
-            }
+                None => return Err(TorrentError::PeerNotAuthenticated),
+            },
         }
     }
 
     // Adding torrents is not relevant to public trackers.
-    pub async fn add_torrent_to_whitelist(&self, info_hash: &InfoHash) -> Result<usize, rusqlite::Error> {
-        self.database.add_info_hash_to_whitelist(info_hash.clone()).await
+    pub async fn add_torrent_to_whitelist(
+        &self,
+        info_hash: &InfoHash,
+    ) -> Result<usize, rusqlite::Error> {
+        self.database
+            .add_info_hash_to_whitelist(info_hash.clone())
+            .await
     }
 
     // Removing torrents is not relevant to public trackers.
-    pub async fn remove_torrent_from_whitelist(&self, info_hash: &InfoHash) -> Result<usize, rusqlite::Error> {
-        self.database.remove_info_hash_from_whitelist(info_hash.clone()).await
+    pub async fn remove_torrent_from_whitelist(
+        &self,
+        info_hash: &InfoHash,
+    ) -> Result<usize, rusqlite::Error> {
+        self.database
+            .remove_info_hash_from_whitelist(info_hash.clone())
+            .await
     }
 
     pub async fn is_info_hash_whitelisted(&self, info_hash: &InfoHash) -> bool {
-        match self.database.get_info_hash_from_whitelist(&info_hash.to_string()).await {
+        match self
+            .database
+            .get_info_hash_from_whitelist(&info_hash.to_string())
+            .await
+        {
             Ok(_) => true,
-            Err(_) => false
+            Err(_) => false,
         }
     }
-
 
     pub async fn get_torrent_peers(
         &self,
         info_hash: &InfoHash,
-        peer_addr: &std::net::SocketAddr
+        peer_addr: &std::net::SocketAddr,
     ) -> Option<Vec<TorrentPeer>> {
         let read_lock = self.torrents.read().await;
         match read_lock.get(info_hash) {
-            None => {
-                None
-            }
-            Some(entry) => {
-                Some(entry.get_peers(peer_addr))
-            }
+            None => None,
+            Some(entry) => Some(entry.get_peers(peer_addr)),
         }
     }
 
-    pub async fn update_torrent_with_peer_and_get_stats(&self, info_hash: &InfoHash, peer: &TorrentPeer) -> Result<TorrentStats, TorrentError> {
+    pub async fn update_torrent_with_peer_and_get_stats(
+        &self,
+        info_hash: &InfoHash,
+        peer: &TorrentPeer,
+    ) -> Result<TorrentStats, TorrentError> {
         let mut torrents = self.torrents.write().await;
 
         let torrent_entry = match torrents.entry(info_hash.clone()) {
-            Entry::Vacant(vacant) => {
-                Ok(vacant.insert(TorrentEntry::new()))
-            }
-            Entry::Occupied(entry) => {
-                Ok(entry.into_mut())
-            }
+            Entry::Vacant(vacant) => Ok(vacant.insert(TorrentEntry::new())),
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
         };
 
         match torrent_entry {
@@ -385,11 +404,13 @@ impl TorrentTracker {
                     completed,
                 })
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    pub async fn get_torrents(&self) -> tokio::sync::RwLockReadGuard<'_, BTreeMap<InfoHash, TorrentEntry>> {
+    pub async fn get_torrents(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, BTreeMap<InfoHash, TorrentEntry>> {
         self.torrents.read().await
     }
 

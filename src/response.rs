@@ -1,10 +1,10 @@
-use std;
-use std::io::{Write};
-use std::net::{SocketAddr};
-use byteorder::{NetworkEndian, WriteBytesExt};
 use super::common::*;
-use std::io;
 use crate::TorrentPeer;
+use byteorder::{NetworkEndian, WriteBytesExt};
+use std;
+use std::io;
+use std::io::Write;
+use std::net::SocketAddr;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum UdpResponse {
@@ -83,7 +83,7 @@ impl UdpResponse {
                 bytes.write_i32::<NetworkEndian>(0)?; // 0 = connect
                 bytes.write_i32::<NetworkEndian>(r.transaction_id.0)?;
                 bytes.write_i64::<NetworkEndian>(r.connection_id.0)?;
-            },
+            }
             UdpResponse::Announce(r) => {
                 bytes.write_i32::<NetworkEndian>(1)?; // 1 = announce
                 bytes.write_i32::<NetworkEndian>(r.transaction_id.0)?;
@@ -103,7 +103,7 @@ impl UdpResponse {
                         }
                     }
                 }
-            },
+            }
             UdpResponse::Scrape(r) => {
                 bytes.write_i32::<NetworkEndian>(2)?; // 2 = scrape
                 bytes.write_i32::<NetworkEndian>(r.transaction_id.0)?;
@@ -113,12 +113,12 @@ impl UdpResponse {
                     bytes.write_i32::<NetworkEndian>(torrent_stat.completed)?;
                     bytes.write_i32::<NetworkEndian>(torrent_stat.leechers)?;
                 }
-            },
+            }
             UdpResponse::Error(r) => {
                 bytes.write_i32::<NetworkEndian>(3)?;
                 bytes.write_i32::<NetworkEndian>(r.transaction_id.0)?;
                 bytes.write_all(r.message.as_bytes())?;
-            },
+            }
         }
 
         Ok(())

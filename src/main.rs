@@ -1,16 +1,17 @@
-use log::{info};
-use torrust_tracker::{http_api_server, Configuration, TorrentTracker, UdpServer, HttpTrackerConfig, UdpTrackerConfig, HttpApiConfig, logging};
+use log::info;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use torrust_tracker::http_server::HttpServer;
+use torrust_tracker::{
+    http_api_server, logging, Configuration, HttpApiConfig, HttpTrackerConfig, TorrentTracker,
+    UdpServer, UdpTrackerConfig,
+};
 
 #[tokio::main]
 async fn main() {
     let config = match Configuration::load_from_file() {
         Ok(config) => Arc::new(config),
-        Err(error) => {
-            panic!("{}", error)
-        }
+        Err(error) => panic!("{}", error),
     };
 
     logging::setup_logging(&config);
@@ -47,7 +48,10 @@ async fn main() {
     }
 }
 
-fn start_torrent_cleanup_job(config: Arc<Configuration>, tracker: Arc<TorrentTracker>) -> Option<JoinHandle<()>> {
+fn start_torrent_cleanup_job(
+    config: Arc<Configuration>,
+    tracker: Arc<TorrentTracker>,
+) -> Option<JoinHandle<()>> {
     let weak_tracker = std::sync::Arc::downgrade(&tracker);
     let interval = config.cleanup_interval.unwrap_or(600);
 
@@ -55,7 +59,7 @@ fn start_torrent_cleanup_job(config: Arc<Configuration>, tracker: Arc<TorrentTra
         let interval = std::time::Duration::from_secs(interval);
         let mut interval = tokio::time::interval(interval);
         interval.tick().await; // first tick is immediate...
-        // periodically call tracker.cleanup_torrents()
+                               // periodically call tracker.cleanup_torrents()
         loop {
             interval.tick().await;
             if let Some(tracker) = weak_tracker.upgrade() {
@@ -64,7 +68,7 @@ fn start_torrent_cleanup_job(config: Arc<Configuration>, tracker: Arc<TorrentTra
                 break;
             }
         }
-    }))
+    }));
 }
 
 fn start_api_server(config: &HttpApiConfig, tracker: Arc<TorrentTracker>) -> JoinHandle<()> {
@@ -77,10 +81,16 @@ fn start_api_server(config: &HttpApiConfig, tracker: Arc<TorrentTracker>) -> Joi
     })
 }
 
-fn start_http_tracker_server(config: &HttpTrackerConfig, tracker: Arc<TorrentTracker>) -> JoinHandle<()> {
+fn start_http_tracker_server(
+    config: &HttpTrackerConfig,
+    tracker: Arc<TorrentTracker>,
+) -> JoinHandle<()> {
     info!("Starting HTTP server on: {}", config.bind_address);
     let http_tracker = Arc::new(HttpServer::new(tracker));
-    let bind_addr = config.bind_address.parse::<std::net::SocketAddrV4>().unwrap();
+    let bind_addr = config
+        .bind_address
+        .parse::<std::net::SocketAddrV4>()
+        .unwrap();
     let ssl_enabled = config.ssl_enabled;
     let ssl_cert_path = config.ssl_cert_path.clone();
     let ssl_key_path = config.ssl_key_path.clone();
@@ -93,15 +103,20 @@ fn start_http_tracker_server(config: &HttpTrackerConfig, tracker: Arc<TorrentTra
                 .tls()
                 .cert_path(ssl_cert_path.as_ref().unwrap())
                 .key_path(ssl_key_path.as_ref().unwrap())
-                .run(bind_addr).await;
+                .run(bind_addr)
+                .await;
         } else {
             warp::serve(HttpServer::routes(http_tracker))
-                .run(bind_addr).await;
+                .run(bind_addr)
+                .await;
         }
     })
 }
 
-async fn start_udp_tracker_server(config: &UdpTrackerConfig, tracker: Arc<TorrentTracker>) -> JoinHandle<()> {
+async fn start_udp_tracker_server(
+    config: &UdpTrackerConfig,
+    tracker: Arc<TorrentTracker>,
+) -> JoinHandle<()> {
     info!("Starting UDP server on: {}", config.bind_address);
     let udp_server = UdpServer::new(tracker).await.unwrap_or_else(|e| {
         panic!("Could not start UDP server: {}", e);

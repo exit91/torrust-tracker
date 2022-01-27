@@ -252,8 +252,9 @@ impl PeerId {
 }
 impl Serialize for PeerId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer, {
+    where
+        S: serde::Serializer,
+    {
         let mut tmp = [0u8; 40];
         binascii::bin2hex(&self.0, &mut tmp).unwrap();
         let id = std::str::from_utf8(&tmp).ok();

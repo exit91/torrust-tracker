@@ -1,19 +1,19 @@
-use log::{debug};
+use byteorder::{NetworkEndian, ReadBytesExt};
+use log::debug;
 use std;
 use std::convert::TryInto;
 use std::io;
+use std::io::{Cursor, Read};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::io::{Cursor, Read};
 use tokio::net::UdpSocket;
-use byteorder::{NetworkEndian, ReadBytesExt};
 
 use super::common::*;
-use crate::response::*;
-use crate::utils::get_connection_id;
-use crate::tracker::TorrentTracker;
-use crate::{TorrentPeer, TrackerMode, TorrentError};
 use crate::key_manager::AuthKey;
+use crate::response::*;
+use crate::tracker::TorrentTracker;
+use crate::utils::get_connection_id;
+use crate::{TorrentError, TorrentPeer, TrackerMode};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Request {
@@ -114,8 +114,6 @@ impl Request {
             .read_i32::<NetworkEndian>()
             .map_err(RequestParseError::io)?;
 
-
-
         match action {
             // Connect
             0 => {
@@ -123,7 +121,7 @@ impl Request {
                     Ok((ConnectRequest {
                         transaction_id: TransactionId(transaction_id),
                     })
-                        .into())
+                    .into())
                 } else {
                     Err(RequestParseError::text(
                         transaction_id,
@@ -208,7 +206,7 @@ impl Request {
                     port: Port(port),
                     auth_key,
                 })
-                    .into())
+                .into())
             }
 
             // Scrape
@@ -227,7 +225,7 @@ impl Request {
                     transaction_id: TransactionId(transaction_id),
                     info_hashes,
                 })
-                    .into())
+                .into())
             }
 
             _ => Err(RequestParseError::text(transaction_id, "Invalid action")),
@@ -250,48 +248,51 @@ impl UdpServer {
         })
     }
 
-    pub async fn authenticate_announce_request(&self, announce_request: &AnnounceRequest) -> Result<(), TorrentError> {
+    pub async fn authenticate_announce_request(
+        &self,
+        announce_request: &AnnounceRequest,
+    ) -> Result<(), TorrentError> {
         match self.tracker.config.mode {
             TrackerMode::PublicMode => Ok(()),
             TrackerMode::ListedMode => {
-                if !self.tracker.is_info_hash_whitelisted(&announce_request.info_hash).await {
-                    return Err(TorrentError::TorrentNotWhitelisted)
+                if !self
+                    .tracker
+                    .is_info_hash_whitelisted(&announce_request.info_hash)
+                    .await
+                {
+                    return Err(TorrentError::TorrentNotWhitelisted);
                 }
 
                 Ok(())
             }
-            TrackerMode::PrivateMode => {
-                match &announce_request.auth_key {
-                    Some(auth_key) => {
-                        if self.tracker.verify_auth_key(auth_key).await.is_err() {
-                            return Err(TorrentError::PeerKeyNotValid)
-                        }
+            TrackerMode::PrivateMode => match &announce_request.auth_key {
+                Some(auth_key) => {
+                    if self.tracker.verify_auth_key(auth_key).await.is_err() {
+                        return Err(TorrentError::PeerKeyNotValid);
+                    }
 
-                        Ok(())
-                    }
-                    None => {
-                        return Err(TorrentError::PeerNotAuthenticated)
-                    }
+                    Ok(())
                 }
-            }
-            TrackerMode::PrivateListedMode => {
-                match &announce_request.auth_key {
-                    Some(auth_key) => {
-                        if self.tracker.verify_auth_key(auth_key).await.is_err() {
-                            return Err(TorrentError::PeerKeyNotValid)
-                        }
-
-                        if !self.tracker.is_info_hash_whitelisted(&announce_request.info_hash).await {
-                            return Err(TorrentError::TorrentNotWhitelisted)
-                        }
-
-                        Ok(())
+                None => return Err(TorrentError::PeerNotAuthenticated),
+            },
+            TrackerMode::PrivateListedMode => match &announce_request.auth_key {
+                Some(auth_key) => {
+                    if self.tracker.verify_auth_key(auth_key).await.is_err() {
+                        return Err(TorrentError::PeerKeyNotValid);
                     }
-                    None => {
-                        return Err(TorrentError::PeerNotAuthenticated)
+
+                    if !self
+                        .tracker
+                        .is_info_hash_whitelisted(&announce_request.info_hash)
+                        .await
+                    {
+                        return Err(TorrentError::TorrentNotWhitelisted);
                     }
+
+                    Ok(())
                 }
-            }
+                None => return Err(TorrentError::PeerNotAuthenticated),
+            },
         }
     }
 
@@ -321,27 +322,44 @@ impl UdpServer {
                 match request {
                     Request::Connect(r) => self.handle_connect(remote_addr, r).await,
                     Request::Announce(r) => {
-                        match self.tracker.authenticate_request(&r.info_hash, &r.auth_key).await {
+                        match self
+                            .tracker
+                            .authenticate_request(&r.info_hash, &r.auth_key)
+                            .await
+                        {
                             Ok(()) => self.handle_announce(remote_addr, r).await,
-                            Err(e) => {
-                                match e {
-                                    TorrentError::TorrentNotWhitelisted => {
-                                        debug!("Info_hash not whitelisted.");
-                                        self.send_error(remote_addr, &r.transaction_id, "torrent not whitelisted").await;
-                                    }
-                                    TorrentError::PeerKeyNotValid => {
-                                        debug!("Peer key not valid.");
-                                        self.send_error(remote_addr, &r.transaction_id, "peer key not valid").await;
-                                    }
-                                    TorrentError::PeerNotAuthenticated => {
-                                        debug!("Peer not authenticated.");
-                                        self.send_error(remote_addr, &r.transaction_id, "peer not authenticated").await;
-                                    }
+                            Err(e) => match e {
+                                TorrentError::TorrentNotWhitelisted => {
+                                    debug!("Info_hash not whitelisted.");
+                                    self.send_error(
+                                        remote_addr,
+                                        &r.transaction_id,
+                                        "torrent not whitelisted",
+                                    )
+                                    .await;
                                 }
-                            }
+                                TorrentError::PeerKeyNotValid => {
+                                    debug!("Peer key not valid.");
+                                    self.send_error(
+                                        remote_addr,
+                                        &r.transaction_id,
+                                        "peer key not valid",
+                                    )
+                                    .await;
+                                }
+                                TorrentError::PeerNotAuthenticated => {
+                                    debug!("Peer not authenticated.");
+                                    self.send_error(
+                                        remote_addr,
+                                        &r.transaction_id,
+                                        "peer not authenticated",
+                                    )
+                                    .await;
+                                }
+                            },
                         }
-                    },
-                    Request::Scrape(r) => self.handle_scrape(remote_addr, r).await
+                    }
+                    Request::Scrape(r) => self.handle_scrape(remote_addr, r).await,
                 }
             }
             Err(err) => {
@@ -363,12 +381,24 @@ impl UdpServer {
     }
 
     async fn handle_announce(&self, remote_addr: SocketAddr, request: AnnounceRequest) {
-        let peer = TorrentPeer::from_udp_announce_request(&request, remote_addr, self.tracker.config.get_ext_ip());
+        let peer = TorrentPeer::from_udp_announce_request(
+            &request,
+            remote_addr,
+            self.tracker.config.get_ext_ip(),
+        );
 
-        match self.tracker.update_torrent_with_peer_and_get_stats(&request.info_hash, &peer).await {
+        match self
+            .tracker
+            .update_torrent_with_peer_and_get_stats(&request.info_hash, &peer)
+            .await
+        {
             Ok(torrent_stats) => {
                 // get all peers excluding the client_addr
-                let peers = match self.tracker.get_torrent_peers(&request.info_hash, &peer.peer_addr).await {
+                let peers = match self
+                    .tracker
+                    .get_torrent_peers(&request.info_hash, &peer.peer_addr)
+                    .await
+                {
                     Some(v) => v,
                     None => {
                         debug!("announce: No peers found.");
@@ -389,7 +419,8 @@ impl UdpServer {
             }
             Err(e) => {
                 debug!("{:?}", e);
-                self.send_error(remote_addr, &request.transaction_id, "error adding torrent").await;
+                self.send_error(remote_addr, &request.transaction_id, "error adding torrent")
+                    .await;
             }
         }
     }
@@ -414,13 +445,11 @@ impl UdpServer {
                         leechers: leechers as i32,
                     }
                 }
-                None => {
-                    UdpScrapeResponseEntry {
-                        seeders: 0,
-                        completed: 0,
-                        leechers: 0,
-                    }
-                }
+                None => UdpScrapeResponseEntry {
+                    seeders: 0,
+                    completed: 0,
+                    leechers: 0,
+                },
             };
 
             scrape_response.torrent_stats.push(scrape_entry);
@@ -431,7 +460,11 @@ impl UdpServer {
         let _ = self.send_response(remote_addr, response).await;
     }
 
-    async fn send_response(&self, remote_addr: SocketAddr, response: UdpResponse) -> Result<usize, ()> {
+    async fn send_response(
+        &self,
+        remote_addr: SocketAddr,
+        response: UdpResponse,
+    ) -> Result<usize, ()> {
         debug!("sending response to: {:?}", &remote_addr);
 
         let buffer = vec![0u8; MAX_PACKET_SIZE];
@@ -458,17 +491,26 @@ impl UdpServer {
         }
     }
 
-    async fn send_packet(&self, remote_addr: &SocketAddr, payload: &[u8]) -> Result<usize, std::io::Error> {
+    async fn send_packet(
+        &self,
+        remote_addr: &SocketAddr,
+        payload: &[u8],
+    ) -> Result<usize, std::io::Error> {
         match self.socket.send_to(payload, remote_addr).await {
             Err(err) => {
                 debug!("failed to send a packet: {}", err);
                 Err(err)
-            },
+            }
             Ok(sz) => Ok(sz),
         }
     }
 
-    async fn send_error(&self, remote_addr: SocketAddr, transaction_id: &TransactionId, error_msg: &str) {
+    async fn send_error(
+        &self,
+        remote_addr: SocketAddr,
+        transaction_id: &TransactionId,
+        error_msg: &str,
+    ) {
         let error_response = UdpErrorResponse {
             action: Actions::Error,
             transaction_id: transaction_id.clone(),

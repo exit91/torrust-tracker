@@ -1,10 +1,10 @@
 use super::common::AUTH_KEY_LENGTH;
 use crate::utils::current_time;
-use rand::{thread_rng, Rng};
-use rand::distributions::Alphanumeric;
-use serde::Serialize;
-use log::debug;
 use derive_more::{Display, Error};
+use log::debug;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use serde::Serialize;
 
 pub fn generate_auth_key(seconds_valid: u64) -> AuthKey {
     let key: String = thread_rng()
@@ -13,7 +13,10 @@ pub fn generate_auth_key(seconds_valid: u64) -> AuthKey {
         .map(char::from)
         .collect();
 
-    debug!("Generated key: {}, valid for: {} seconds", key, seconds_valid);
+    debug!(
+        "Generated key: {}, valid for: {} seconds",
+        key, seconds_valid
+    );
 
     AuthKey {
         key,
@@ -23,8 +26,12 @@ pub fn generate_auth_key(seconds_valid: u64) -> AuthKey {
 
 pub fn verify_auth_key(auth_key: &AuthKey) -> Result<(), Error> {
     let current_time = current_time();
-    if auth_key.valid_until.is_none() { return Err(Error::KeyInvalid) }
-    if auth_key.valid_until.unwrap() < current_time { return Err(Error::KeyExpired) }
+    if auth_key.valid_until.is_none() {
+        return Err(Error::KeyInvalid);
+    }
+    if auth_key.valid_until.unwrap() < current_time {
+        return Err(Error::KeyExpired);
+    }
 
     Ok(())
 }
@@ -67,7 +74,7 @@ pub enum Error {
     #[display(fmt = "Key is invalid.")]
     KeyInvalid,
     #[display(fmt = "Key has expired.")]
-    KeyExpired
+    KeyExpired,
 }
 
 impl From<r2d2_sqlite::rusqlite::Error> for Error {
@@ -83,17 +90,10 @@ mod tests {
 
     #[test]
     fn auth_key_from_buffer() {
-        let auth_key = key_manager::AuthKey::from_buffer(
-            [
-                89, 90, 83, 108,
-                52, 108, 77, 90,
-                117, 112, 82, 117,
-                79, 112, 83, 82,
-                67, 51, 107, 114,
-                73, 75, 82, 53,
-                66, 80, 66, 49,
-                52, 110, 114, 74]
-        );
+        let auth_key = key_manager::AuthKey::from_buffer([
+            89, 90, 83, 108, 52, 108, 77, 90, 117, 112, 82, 117, 79, 112, 83, 82, 67, 51, 107, 114,
+            73, 75, 82, 53, 66, 80, 66, 49, 52, 110, 114, 74,
+        ]);
 
         assert!(auth_key.is_some());
         assert_eq!(auth_key.unwrap().key, "YZSl4lMZupRuOpSRC3krIKR5BPB14nrJ");
