@@ -277,7 +277,7 @@ impl TorrentTracker {
     }
 
     pub async fn generate_auth_key(&self, seconds_valid: u64) -> Result<AuthKey, rusqlite::Error> {
-        let auth_key = key_manager::generate_auth_key(seconds_valid);
+        let auth_key = key_manager::AuthKey::generate(seconds_valid);
 
         // add key to database
         if let Err(error) = self.database.add_key_to_keys(&auth_key).await {
@@ -292,8 +292,10 @@ impl TorrentTracker {
     }
 
     pub async fn verify_auth_key(&self, auth_key: &AuthKey) -> Result<(), key_manager::Error> {
-        let db_key = self.database.get_key_from_keys(&auth_key.key).await?;
-        key_manager::verify_auth_key(&db_key)
+        self.database
+            .get_key_from_keys(&auth_key.key)
+            .await?
+            .verify()
     }
 
     pub async fn authenticate_request(
